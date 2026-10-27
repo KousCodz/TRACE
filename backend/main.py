@@ -1,6 +1,8 @@
+
 from pathlib import Path
 from difflib import SequenceMatcher
 import io
+import re
 
 import fitz
 from docx import Document
@@ -23,7 +25,7 @@ from similarity import (
 app = FastAPI(
     title="TRACE API",
     description="Document Similarity and Code Plagiarism Analyser",
-    version="1.3.1",
+    version="1.3.2",
 )
 
 app.add_middleware(
@@ -31,6 +33,7 @@ app.add_middleware(
     allow_origins=[
         "http://127.0.0.1:5500",
         "http://localhost:5500",
+        "https://trace-frontend-yn4e.onrender.com",
         "https://trace-wzav.onrender.com",
     ],
     allow_credentials=False,
@@ -40,31 +43,86 @@ app.add_middleware(
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_TEXT_LENGTH = 200000
-
-# LCS uses Dynamic Programming with quadratic time and memory costs.
-# The limit applies independently to each input.
 MAX_LCS_TOKENS = 1500
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 CODE_EXTENSIONS = {
     ".py": "python",
-    ".cpp": "cpp",
-    ".cc": "cpp",
-    ".cxx": "cpp",
-    ".hpp": "cpp",
-    ".h": "cpp",
-    ".c": "c",
-    ".java": "java",
-    ".js": "javascript",
-    ".ts": "typescript",
-    ".php": "php",
-    ".cs": "csharp",
-    ".go": "go",
-    ".rs": "rust",
+    ".cpp": "generic",
+    ".cc": "generic",
+    ".cxx": "generic",
+    ".hpp": "generic",
+    ".h": "generic",
+    ".c": "generic",
+    ".java": "generic",
+    ".js": "generic",
+    ".ts": "generic",
+    ".php": "generic",
+    ".cs": "generic",
+    ".go": "generic",
+    ".rs": "generic",
     ".txt": "generic",
 }
 
+
+# ============================================================
+# CODE LANGUAGE DETECTION
+# ============================================================
+
+def detect_code_language(filename: str, code: str) -> str:
+    """
+    Select Python tokenization only for code that appears to be Python.
+    Use generic tokenization for other source languages.
+
+    This also protects pasted C/C++ code accidentally labelled as .py.
+    """
+
+    extension = Path(filename).suffix.lower()
+    source = code.lstrip("\ufeff")
+
+    cpp_patterns = [
+        r"^\s*#\s*include\b",
+        r"\bstd\s*::",
+        r"\bcout\s*<<",
+        r"\bcin\s*>>",
+        r"\busing\s+namespace\s+std\b",
+        r"\bint\s+main\s*\(",
+        r"\bprintf\s*\(",
+        r"\bscanf\s*\(",
+    ]
+
+    java_patterns = [
+        r"\bSystem\s*\.\s*out\s*\.",
+        r"\bpublic\s+(?:static\s+)?class\b",
+        r"\bimport\s+java\.",
+    ]
+
+    javascript_patterns = [
+        r"\bconsole\s*\.\s*log\s*\(",
+        r"\b(?:const|let|var)\s+\w+\s*=",
+        r"\bfunction\s+\w+\s*\(",
+    ]
+
+    non_python_patterns = cpp_patterns + java_patterns + javascript_patterns
+
+    looks_non_python = any(
+        re.search(pattern, source, re.MULTILINE)
+        for pattern in non_python_patterns
+    )
+
+    if looks_non_python:
+        return "generic"
+
+    if extension == ".py":
+        return "python"
+
+    return "generic"
+
+
+# ============================================================
+# SIMILARITY SCORE HELPERS
+# ============================================================
 
 def calculate_lcs_details(tokens_a: list, tokens_b: list) -> dict:
     """Calculate LCS details when both inputs fit the DP safety limit."""
@@ -90,9 +148,9 @@ def calculate_lcs_details(tokens_a: list, tokens_b: list) -> dict:
             "lcs_note": (
                 f"LCS was skipped because either input exceeds "
                 f"the limit of {MAX_LCS_TOKENS} tokens for this "
-                "Dynamic Programming implementation. "
-                "Rabin-Karp results remain available, but the overall "
-                "score is unavailable because it requires both scores."
+                "Dynamic Programming implementation. Rabin-Karp "
+                "results remain available, but the overall score "
+                "is unavailable because it requires both scores."
             ),
         }
 
@@ -278,16 +336,13 @@ def compare_documents(request: CompareRequest):
     words_a = tokenize(request.text_a)
     words_b = tokenize(request.text_b)
 
-    # Rabin-Karp exact matching passage detection.
     matches = find_matching_passages(
         request.text_a,
         request.text_b,
         min_words=5,
     )
 
-    # LCS using Dynamic Programming, subject to the token limit.
     lcs_details = calculate_lcs_details(words_a, words_b)
-
     scores = build_scores(matches, words_a, words_b, lcs_details)
 
     return {
@@ -355,16 +410,20 @@ def compare_code(request: CodeCompareRequest):
             detail="Both code files must contain code.",
         )
 
-    # Use Python tokenization only when both files are Python.
-    if extension_a == ".py" and extension_b == ".py":
-        language = "python"
-    else:
-        language = "generic"
+    language_a = detect_code_language(filename_a, request.code_a)
+    language_b = detect_code_language(filename_b, request.code_b)
+
+    # Use Python tokenization only when both inputs are recognized as Python.
+    # If languages differ, use generic tokenization for a consistent comparison.
+    language = (
+        "python"
+        if language_a == "python" and language_b == "python"
+        else "generic"
+    )
 
     code_tokens_a = tokenize_code(request.code_a, language)
     code_tokens_b = tokenize_code(request.code_b, language)
 
-    # Rabin-Karp matching code sequences.
     matches = find_matching_code_sequences(
         request.code_a,
         request.code_b,
@@ -372,13 +431,11 @@ def compare_code(request: CodeCompareRequest):
         min_tokens=5,
     )
 
-    # LCS using Dynamic Programming, subject to the token limit.
     lcs_details = calculate_lcs_details(
         code_tokens_a,
         code_tokens_b,
     )
 
-        # Calculate the normal similarity scores.
     scores = build_scores(
         matches,
         code_tokens_a,
@@ -386,9 +443,12 @@ def compare_code(request: CodeCompareRequest):
         lcs_details,
     )
 
-    # If both token sequences are identical, the code similarity
-    # must be 100%, regardless of comments or whitespace.
-    if code_tokens_a == code_tokens_b:
+    # Identical normalized token sequences have 100% similarity only
+    # when LCS was successfully calculated.
+    if (
+        lcs_details["lcs_available"]
+        and code_tokens_a == code_tokens_b
+    ):
         scores["similarity_percentage"] = 100.0
         scores["overall_similarity_percentage"] = 100.0
         scores["rabin_karp_similarity_percentage"] = 100.0
@@ -402,6 +462,7 @@ def compare_code(request: CodeCompareRequest):
     return {
         "filename_a": filename_a,
         "filename_b": filename_b,
+        "detected_language": language,
         **scores,
         "matching_passages": matches,
         "matching_passage_count": len(matches),
@@ -419,7 +480,8 @@ def compare_code(request: CodeCompareRequest):
         "notice": (
             "Overall Similarity is a custom arithmetic mean of Rabin-Karp "
             "coverage and LCS similarity using Dynamic Programming. "
-            "Comments and whitespace are ignored where supported. "
-            "Similarity alone does not prove plagiarism."
+            "Comments and whitespace are ignored only where supported by "
+            "the selected tokenizer. Similarity alone does not prove "
+            "plagiarism."
         ),
     }
