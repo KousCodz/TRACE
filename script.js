@@ -6,7 +6,7 @@
    ============================================================ */
 
 const root = document.documentElement;
-const API_BASE = "https://trace-backend-aobe.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 200000;
 
@@ -98,8 +98,8 @@ function applyTheme(theme) {
   }
 
   if (themeIcon) {
-    themeIcon.textContent = isDark ? "☼" : "◐";
-  }
+  themeIcon.textContent = isDark ? "\u263C" : "\u25D0";
+}
 
   if (themeToggle) {
     themeToggle.setAttribute("aria-pressed", String(isDark));
@@ -856,7 +856,7 @@ function renderSelectedFiles({
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "remove-document-button";
-    removeButton.textContent = "×";
+    removeButton.textContent = "Ã—";
     removeButton.setAttribute("aria-label", `Remove ${file.name}`);
     removeButton.title = `Remove ${label}`;
 
@@ -1235,12 +1235,38 @@ if (codeButton) {
 
     let codeA = "";
     let codeB = "";
-    let filenameA = "Code A (pasted text)";
-    let filenameB = "Code B (pasted text)";
+    // Pasted code has no real filename, so assign recognized source-code extensions.
+    let filenameA = "pasted_code_a.py";
+    let filenameB = "pasted_code_b.py";
 
     if (textMode) {
       codeA = codeTextA?.value ?? "";
       codeB = codeTextB?.value ?? "";
+
+      // Infer common languages from pasted source. Python is the safe fallback
+      // for snippets whose language cannot be identified confidently.
+      const inferPastedCodeExtension = (code) => {
+        const source = String(code || "");
+        if (/^\s*#include\s*[<"]|\bstd::|\bcout\s*<<|\bcin\s*>>/m.test(source)) {
+          return "cpp";
+        }
+        if (/\bSystem\.out\.|\bpublic\s+(static\s+)?class\b|\bimport\s+java\./m.test(source)) {
+          return "java";
+        }
+        if (/\bconsole\.log\s*\(|\b(const|let|var)\s+\w+\s*=|\bfunction\s+\w+\s*\(/m.test(source)) {
+          return "js";
+        }
+        if (/\bprintf\s*\(|\bscanf\s*\(/m.test(source)) {
+          return "c";
+        }
+        if (/^\s*(def\s+\w+\s*\(|class\s+\w+\s*[:(]|import\s+\w+|from\s+\w+\s+import\s+|print\s*\()/m.test(source)) {
+          return "py";
+        }
+        return "py";
+      };
+
+      filenameA = `pasted_code_a.${inferPastedCodeExtension(codeA)}`;
+      filenameB = `pasted_code_b.${inferPastedCodeExtension(codeB)}`;
 
       if (!codeA.trim() || !codeB.trim()) {
         updateCodeFeedback(
