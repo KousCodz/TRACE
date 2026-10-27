@@ -856,7 +856,7 @@ function renderSelectedFiles({
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "remove-document-button";
-    removeButton.textContent = "Ã—";
+    removeButton.textContent = "\u00D7";
     removeButton.setAttribute("aria-label", `Remove ${file.name}`);
     removeButton.title = `Remove ${label}`;
 
