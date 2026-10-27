@@ -378,12 +378,21 @@ def compare_code(request: CodeCompareRequest):
         code_tokens_b,
     )
 
+        # Calculate the normal similarity scores.
     scores = build_scores(
         matches,
         code_tokens_a,
         code_tokens_b,
         lcs_details,
     )
+
+    # If both token sequences are identical, the code similarity
+    # must be 100%, regardless of comments or whitespace.
+    if code_tokens_a == code_tokens_b:
+        scores["similarity_percentage"] = 100.0
+        scores["overall_similarity_percentage"] = 100.0
+        scores["rabin_karp_similarity_percentage"] = 100.0
+        scores["lcs_similarity_percentage"] = 100.0
 
     differences = find_code_differences(
         request.code_a,
