@@ -403,7 +403,7 @@ function renderAlgorithmScores(prefix, comparison) {
     panel.id = `${prefix}AlgorithmScores`;
     panel.className = "algorithm-score-details";
 
-    appendTextElement(panel, "h3", "Algorithm breakdown");
+    appendTextElement(panel, "h3", "\nAlgorithm breakdown");
 
     appendTextElement(
       panel,
