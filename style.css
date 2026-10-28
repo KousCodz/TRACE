@@ -1603,3 +1603,21 @@ input[type="search"]::placeholder {
 [data-theme="dark"] input[type="search"]::placeholder {
     color: #a0a0a0;
 }
+
+
+/* Prevent matching code from overflowing its result card */
+.code-match-item {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.matching-code-passage {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
+  overflow-x: auto;
+}
+
